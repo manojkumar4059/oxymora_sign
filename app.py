@@ -260,40 +260,20 @@ def authorize():
                            error="Invalid Email or Password!")
 
 @app.route('/token', methods=['POST'])
-def token():
-    # Alexa humesha form-data (POST) bhejti hai
-    grant_type = request.form.get('grant_type')
-    code = request.form.get('code')
-    
-    # 1. Check karo ki code mil raha hai ya nahi
-    if not code:
-        return jsonify({"error": "invalid_grant"}), 400
-
+def token_exchange():
+    auth_code = request.form.get('code', '')
     try:
-        # Code humne /auth mein 'CODE_1' format mein banaya tha
-        user_id = code.replace('CODE_', '')
-        
-        # Access Token ko strictly string mein badlo
-        raw_token = generate_access_token(user_id)
-        if isinstance(raw_token, bytes):
-            access_token = raw_token.decode('utf-8')
-        else:
-            access_token = str(raw_token)
-
-        # Alexa ko ye 4 fields strictly chahiye
-        response_data = {
+        user_id = int(auth_code.split('_')[1])
+        access_token = generate_token(user_id)  # ✅ generate_token
+        print(f"✅ [TOKEN] Token issued for user {user_id}")
+        return jsonify({
             "access_token": access_token,
             "token_type": "Bearer",
-            "expires_in": 31536000, # 1 Year in seconds
-            "refresh_token": "OxyStaticRefresh786" # Ye bhi string hona zaroori hai
-        }
-        
-        print(f"✅ Token successfully issued for User: {user_id}")
-        return jsonify(response_data)
-
+            "expires_in": 31536000
+        }), 200
     except Exception as e:
-        print(f"❌ [TOKEN] Error: {str(e)}")
-        return jsonify({"error": "server_error"}), 500
+        print(f"❌ [TOKEN] Error: {e}")
+        return jsonify({"error": "invalid_grant"}), 400
 
 # ================= DEVICE MANAGEMENT =================
 @app.route('/add_device', methods=['POST'])
