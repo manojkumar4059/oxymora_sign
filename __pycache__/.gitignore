@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+instance/
+.vscode/
+BEFORE_AFTER.md
+DOCUMENTATION.md
+QUICKSTART.md
