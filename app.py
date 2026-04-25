@@ -260,20 +260,35 @@ def authorize():
                            error="Invalid Email or Password!")
 
 @app.route('/token', methods=['POST'])
-def token_exchange():
-    auth_code = request.form.get('code', '')
-    try:
-        user_id = int(auth_code.split('_')[1])
-        access_token = generate_token(user_id)
-        print(f"✅ [TOKEN] Token issued for user {user_id}")
-        return jsonify({
-            "access_token": access_token,
-            "token_type": "Bearer",
-            "expires_in": 31536000
-        }), 200
-    except Exception as e:
-        print(f"❌ [TOKEN] Error: {e}")
+def token():
+    # Alexa form-data bhejti hai, json nahi
+    grant_type = request.form.get('grant_type')
+    code = request.form.get('code')
+    
+    # Validation
+    if not code:
         return jsonify({"error": "invalid_grant"}), 400
+
+    # Code se user_id nikalo (Jo humne /auth mein 'CODE_1' banaya tha)
+    try:
+        user_id = code.replace('CODE_', '')
+        
+        # Access Token generate karo (Ensure it returns a STRING)
+        access_token = generate_access_token(user_id)
+        
+        # Alexa ko ye JSON structure hi chahiye
+        response_data = {
+            "access_token": str(access_token), # Force string conversion
+            "token_type": "Bearer",
+            "expires_in": 3600 * 24 * 365, # 1 year
+            "refresh_token": "static_refresh_token_for_now" # Ye bhi string hona chahiye
+        }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Token Error: {str(e)}")
+        return jsonify({"error": "server_error", "message": str(e)}), 400
 
 # ================= DEVICE MANAGEMENT =================
 @app.route('/add_device', methods=['POST'])
