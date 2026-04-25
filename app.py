@@ -190,7 +190,6 @@ def signup():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
-
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -198,15 +197,22 @@ def login():
     password = data.get('password')
 
     user = User.query.filter_by(email=email).first()
-    if user and bcrypt.check_password_hash(user.password, password):
-        return jsonify({
-            "success": True,
-            "access_token": generate_token(user.user_id),
-            "user_id": user.user_id
-        }), 200
+    
+    if user:
+        # ✅ Dono try karo
+        try:
+            password_ok = bcrypt.check_password_hash(user.password, password)
+        except Exception:
+            password_ok = (user.password == password)
+
+        if password_ok:
+            return jsonify({
+                "success": True,
+                "access_token": generate_token(user.user_id),
+                "user_id": user.user_id
+            }), 200
 
     return jsonify({"success": False, "message": "Invalid email or password!"}), 401
-
 @app.route('/update-password', methods=['POST'])
 def update_password():
     data = request.get_json()
@@ -240,22 +246,26 @@ def authorize():
             return "Invalid Request: Missing state or redirect_uri", 400
         return render_template('login.html', state=state, redirect_uri=redirect_uri)
 
-    # POST - form submit
     email = request.form.get('email', '').lower().strip()
     password = request.form.get('password', '')
 
     user = User.query.filter_by(email=email).first()
 
-    if user and bcrypt.check_password_hash(user.password, password):
-        auth_code = f"CODE_{user.user_id}"
-        # ✅ Auth Code Grant = ?code= wala redirect
-        final_url = f"{redirect_uri}?state={state}&code={auth_code}"
-        print(f"✅ Redirecting to: {final_url}")
-        return redirect(final_url)
+    if user:
+        # ✅ Dono try karo — purana plain text aur naya bcrypt
+        try:
+            password_ok = bcrypt.check_password_hash(user.password, password)
+        except Exception:
+            # Purana plain text password hai database mein
+            password_ok = (user.password == password)
 
-    return render_template('login.html', state=state, redirect_uri=redirect_uri, 
+        if password_ok:
+            auth_code = f"CODE_{user.user_id}"
+            final_url = f"{redirect_uri}?state={state}&code={auth_code}"
+            return redirect(final_url)
+
+    return render_template('login.html', state=state, redirect_uri=redirect_uri,
                            error="Invalid Email or Password!")
-
 @app.route('/token', methods=['POST'])
 def token_exchange():
     auth_code = request.form.get('code', '')
