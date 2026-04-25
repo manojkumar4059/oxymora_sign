@@ -132,7 +132,11 @@ def generate_token(user_id, days=365):
         'user_id': user_id,
         'exp': datetime.datetime.utcnow() + datetime.timedelta(days=days)
     }
-    return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    # ✅ String ensure karo
+    if isinstance(token, bytes):
+        token = token.decode('utf-8')
+    return token
 
 def publish_mqtt(topic, message):
     if not mqtt_state.is_connected:
