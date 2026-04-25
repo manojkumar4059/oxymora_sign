@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, render_template, redirect
 from flask_sqlalchemy import SQLAlchemy
-import bcrypt as bc
 import jwt
 import datetime
 import os
@@ -40,16 +39,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = JWT_KEY
 
 db = SQLAlchemy(app)
-
-# ================= BCRYPT HELPERS =================
-def hash_password(password):
-    return bc.hashpw(password.encode('utf-8'), bc.gensalt()).decode('utf-8')
-
-def check_password(plain, hashed):
-    try:
-        return bc.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
-    except Exception:
-        return plain == hashed  # Purana plain text fallback
 
 # ================= MQTT SETUP =================
 class MQTTState:
@@ -191,7 +180,8 @@ def signup():
         return jsonify({"success": False, "message": "Email already registered!"}), 400
 
     try:
-        new_user = User(username=username, email=email, password=hash_password(password))
+        # Plain text save
+        new_user = User(username=username, email=email, password=password)
         db.session.add(new_user)
         db.session.commit()
         return jsonify({"success": True, "message": "Signup successful!", "user_id": new_user.user_id}), 201
@@ -205,9 +195,10 @@ def login():
     email = data.get('email', '').lower().strip()
     password = data.get('password', '')
 
-    user = User.query.filter_by(email=email).first()
+    # Plain text match
+    user = User.query.filter_by(email=email, password=password).first()
 
-    if user and check_password(password, user.password):
+    if user:
         return jsonify({
             "success": True,
             "access_token": generate_token(user.user_id),
@@ -234,7 +225,7 @@ def update_password():
         return jsonify({"success": False, "message": "User not found!"}), 404
 
     try:
-        user.password = hash_password(new_password)
+        user.password = new_password
         db.session.commit()
         return jsonify({"success": True, "message": "Password updated!"}), 200
     except Exception as e:
@@ -255,15 +246,16 @@ def authorize():
     email = request.form.get('email', '').lower().strip()
     password = request.form.get('password', '')
 
-    user = User.query.filter_by(email=email).first()
+    # Plain text match
+    user = User.query.filter_by(email=email, password=password).first()
 
-    if user and check_password(password, user.password):
+    if user:
         auth_code = f"CODE_{user.user_id}"
         final_url = f"{redirect_uri}?state={state}&code={auth_code}"
-        print(f"✅ [AUTH] User {user.user_id} linked successfully")
+        print(f"✅ [AUTH] User {user.user_id} linked!")
         return redirect(final_url)
 
-    print(f"❌ [AUTH] Login failed for: {email}")
+    print(f"❌ [AUTH] Failed for: {email}")
     return render_template('login.html', state=state, redirect_uri=redirect_uri,
                            error="Invalid Email or Password!")
 
