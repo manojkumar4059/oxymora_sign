@@ -261,34 +261,39 @@ def authorize():
 
 @app.route('/token', methods=['POST'])
 def token():
-    # Alexa form-data bhejti hai, json nahi
+    # Alexa humesha form-data (POST) bhejti hai
     grant_type = request.form.get('grant_type')
     code = request.form.get('code')
     
-    # Validation
+    # 1. Check karo ki code mil raha hai ya nahi
     if not code:
         return jsonify({"error": "invalid_grant"}), 400
 
-    # Code se user_id nikalo (Jo humne /auth mein 'CODE_1' banaya tha)
     try:
+        # Code humne /auth mein 'CODE_1' format mein banaya tha
         user_id = code.replace('CODE_', '')
         
-        # Access Token generate karo (Ensure it returns a STRING)
-        access_token = generate_access_token(user_id)
-        
-        # Alexa ko ye JSON structure hi chahiye
+        # Access Token ko strictly string mein badlo
+        raw_token = generate_access_token(user_id)
+        if isinstance(raw_token, bytes):
+            access_token = raw_token.decode('utf-8')
+        else:
+            access_token = str(raw_token)
+
+        # Alexa ko ye 4 fields strictly chahiye
         response_data = {
-            "access_token": str(access_token), # Force string conversion
+            "access_token": access_token,
             "token_type": "Bearer",
-            "expires_in": 3600 * 24 * 365, # 1 year
-            "refresh_token": "static_refresh_token_for_now" # Ye bhi string hona chahiye
+            "expires_in": 31536000, # 1 Year in seconds
+            "refresh_token": "OxyStaticRefresh786" # Ye bhi string hona zaroori hai
         }
         
+        print(f"✅ Token successfully issued for User: {user_id}")
         return jsonify(response_data)
-        
+
     except Exception as e:
-        print(f"Token Error: {str(e)}")
-        return jsonify({"error": "server_error", "message": str(e)}), 400
+        print(f"❌ [TOKEN] Error: {str(e)}")
+        return jsonify({"error": "server_error"}), 500
 
 # ================= DEVICE MANAGEMENT =================
 @app.route('/add_device', methods=['POST'])
