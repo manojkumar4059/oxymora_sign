@@ -232,7 +232,6 @@ def update_password():
 # ================= ALEXA ACCOUNT LINKING =================
 @app.route('/auth', methods=['GET', 'POST'])
 def authorize():
-    # Alexa parameters GET aur POST dono se mil sakte hain
     state = request.args.get('state') or request.form.get('state')
     redirect_uri = request.args.get('redirect_uri') or request.form.get('redirect_uri')
 
@@ -241,28 +240,21 @@ def authorize():
             return "Invalid Request: Missing state or redirect_uri", 400
         return render_template('login.html', state=state, redirect_uri=redirect_uri)
 
-    # POST Logic (Jab user login button dabaye)
+    # POST - form submit
     email = request.form.get('email', '').lower().strip()
     password = request.form.get('password', '')
 
     user = User.query.filter_by(email=email).first()
 
     if user and bcrypt.check_password_hash(user.password, password):
-        # 1. Token generate karo
-        access_token = generate_access_token(user.user_id)
-        
-        # 2. Alexa ko batao ki link ho gaya
-        user.is_alexa_linked = True
-        db.session.commit()
-
-        # 3. Implicit Grant Redirect (Sabse zaroori line)
-        # Isme '#' ka use hota hai, '?' ka nahi
-        final_url = f"{redirect_uri}#state={state}&access_token={access_token}&token_type=Bearer"
-        print(f"✅ Success! Redirecting to: {final_url}")
+        auth_code = f"CODE_{user.user_id}"
+        # ✅ Auth Code Grant = ?code= wala redirect
+        final_url = f"{redirect_uri}?state={state}&code={auth_code}"
+        print(f"✅ Redirecting to: {final_url}")
         return redirect(final_url)
 
-    # Agar login fail ho jaye
-    return render_template('login.html', state=state, redirect_uri=redirect_uri, error="Invalid Email or Password!")
+    return render_template('login.html', state=state, redirect_uri=redirect_uri, 
+                           error="Invalid Email or Password!")
 
 @app.route('/token', methods=['POST'])
 def token_exchange():
