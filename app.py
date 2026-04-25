@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, render_template, redirect
 from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
+import bcrypt as bc
 import jwt
 import datetime
 import os
@@ -14,7 +14,6 @@ import time
 load_dotenv()
 
 app = Flask(__name__)
-bcrypt = Bcrypt(app)
 
 # ================= CONFIGURATION =================
 DB_USER = os.getenv('DB_USER')
@@ -41,6 +40,16 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = JWT_KEY
 
 db = SQLAlchemy(app)
+
+# ================= BCRYPT HELPERS =================
+def hash_password(password):
+    return bc.hashpw(password.encode('utf-8'), bc.gensalt()).decode('utf-8')
+
+def check_password(plain, hashed):
+    try:
+        return bc.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
+    except Exception:
+        return plain == hashed  # Purana plain text fallback
 
 # ================= MQTT SETUP =================
 class MQTTState:
@@ -182,37 +191,31 @@ def signup():
         return jsonify({"success": False, "message": "Email already registered!"}), 400
 
     try:
-        hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
-        new_user = User(username=username, email=email, password=hashed_pw)
+        new_user = User(username=username, email=email, password=hash_password(password))
         db.session.add(new_user)
         db.session.commit()
         return jsonify({"success": True, "message": "Signup successful!", "user_id": new_user.user_id}), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     email = data.get('email', '').lower().strip()
-    password = data.get('password')
+    password = data.get('password', '')
 
     user = User.query.filter_by(email=email).first()
-    
-    if user:
-        # ✅ Dono try karo
-        try:
-            password_ok = bcrypt.check_password_hash(user.password, password)
-        except Exception:
-            password_ok = (user.password == password)
 
-        if password_ok:
-            return jsonify({
-                "success": True,
-                "access_token": generate_token(user.user_id),
-                "user_id": user.user_id
-            }), 200
+    if user and check_password(password, user.password):
+        return jsonify({
+            "success": True,
+            "access_token": generate_token(user.user_id),
+            "user_id": user.user_id
+        }), 200
 
     return jsonify({"success": False, "message": "Invalid email or password!"}), 401
+
 @app.route('/update-password', methods=['POST'])
 def update_password():
     data = request.get_json()
@@ -221,14 +224,17 @@ def update_password():
         return jsonify({"success": False, "message": "Invalid OTP!"}), 403
 
     email = data.get('email', '').lower().strip()
-    new_password = data.get('new_password')
+    new_password = data.get('new_password', '')
+
+    if not new_password:
+        return jsonify({"success": False, "message": "New password required!"}), 400
 
     user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({"success": False, "message": "User not found!"}), 404
 
     try:
-        user.password = bcrypt.generate_password_hash(new_password).decode('utf-8')
+        user.password = hash_password(new_password)
         db.session.commit()
         return jsonify({"success": True, "message": "Password updated!"}), 200
     except Exception as e:
@@ -251,43 +257,30 @@ def authorize():
 
     user = User.query.filter_by(email=email).first()
 
-    if user:
-        # ✅ Dono try karo — purana plain text aur naya bcrypt
-        try:
-            password_ok = bcrypt.check_password_hash(user.password, password)
-        except Exception:
-            # Purana plain text password hai database mein
-            password_ok = (user.password == password)
+    if user and check_password(password, user.password):
+        auth_code = f"CODE_{user.user_id}"
+        final_url = f"{redirect_uri}?state={state}&code={auth_code}"
+        print(f"✅ [AUTH] User {user.user_id} linked successfully")
+        return redirect(final_url)
 
-        if password_ok:
-            auth_code = f"CODE_{user.user_id}"
-            final_url = f"{redirect_uri}?state={state}&code={auth_code}"
-            return redirect(final_url)
-    if user:
-        print(f"🔍 DB Password: {user.password}")
-        print(f"🔍 Entered: {password}")
-        try:
-            password_ok = bcrypt.check_password_hash(user.password, password)
-            print(f"🔍 Bcrypt result: {password_ok}")
-        except Exception as e:
-            print(f"🔍 Bcrypt error: {e}")
-            password_ok = (user.password == password)
-            print(f"🔍 Plain text result: {password_ok}")    
-
+    print(f"❌ [AUTH] Login failed for: {email}")
     return render_template('login.html', state=state, redirect_uri=redirect_uri,
                            error="Invalid Email or Password!")
+
 @app.route('/token', methods=['POST'])
 def token_exchange():
     auth_code = request.form.get('code', '')
     try:
         user_id = int(auth_code.split('_')[1])
         access_token = generate_token(user_id)
+        print(f"✅ [TOKEN] Token issued for user {user_id}")
         return jsonify({
             "access_token": access_token,
             "token_type": "Bearer",
             "expires_in": 31536000
         }), 200
-    except:
+    except Exception as e:
+        print(f"❌ [TOKEN] Error: {e}")
         return jsonify({"error": "invalid_grant"}), 400
 
 # ================= DEVICE MANAGEMENT =================
@@ -442,7 +435,7 @@ def alexa_handler():
                         publish_mqtt(topic, payload)
                         return build_alexa_response(res_text)
                     else:
-                        return build_alexa_response(f"Woh device nahi mili.")
+                        return build_alexa_response("Woh device nahi mili.")
 
                 return build_alexa_response("Kya karun? On/Off, Speed, Brightness ya Color bolo.")
 
@@ -454,6 +447,5 @@ def alexa_handler():
 
 # ================= APP STARTUP =================
 if __name__ == "__main__":
-   
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
