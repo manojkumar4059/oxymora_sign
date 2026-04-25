@@ -104,8 +104,8 @@ def generate_access_token(user_id):
 
 # ================= ROUTES =================
 @app.route('/')
-def index():
-    return render_template('index.html')
+def home():
+    return "<h1>Oxy Backend is Live!</h1><p>Server is running perfectly.</p>"
 
 # ================= AUTHENTICATION ROUTES =================
 @app.route('/signup', methods=['POST'])
