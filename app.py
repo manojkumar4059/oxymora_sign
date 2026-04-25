@@ -263,6 +263,16 @@ def authorize():
             auth_code = f"CODE_{user.user_id}"
             final_url = f"{redirect_uri}?state={state}&code={auth_code}"
             return redirect(final_url)
+    if user:
+        print(f"🔍 DB Password: {user.password}")
+        print(f"🔍 Entered: {password}")
+        try:
+            password_ok = bcrypt.check_password_hash(user.password, password)
+            print(f"🔍 Bcrypt result: {password_ok}")
+        except Exception as e:
+            print(f"🔍 Bcrypt error: {e}")
+            password_ok = (user.password == password)
+            print(f"🔍 Plain text result: {password_ok}")    
 
     return render_template('login.html', state=state, redirect_uri=redirect_uri,
                            error="Invalid Email or Password!")
