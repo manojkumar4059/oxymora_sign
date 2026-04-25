@@ -8,3 +8,4 @@ paho-mqtt==2.1.0
 gunicorn==25.1.0
 cryptography==46.0.5
 pymysql
+bcrypt==4.0.1
