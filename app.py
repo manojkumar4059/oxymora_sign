@@ -230,26 +230,28 @@ def get_devices():
     return jsonify({"success": True, "devices": devices_list, "total": len(devices_list)}), 200
 @app.route('/auth', methods=['GET', 'POST'])
 def authorize():
-    # Alexa parameters nikalna
     state = request.args.get('state') or request.form.get('state')
     redirect_uri = request.args.get('redirect_uri') or request.form.get('redirect_uri')
 
     if request.method == 'GET':
         return render_template('login.html', state=state, redirect_uri=redirect_uri)
 
-    # POST: Login Logic
-    email = request.form.get('email', '').lower().strip()
-    password = request.form.get('password', '')
+    try:
+        email = request.form.get('email', '').lower().strip()
+        password = request.form.get('password', '')
 
-    user = User.query.filter_by(email=email, password=password).first()
+        # Database query
+        user = User.query.filter_by(email=email, password=password).first()
 
-    if user:
-        # Alexa ke liye temporary code bhej rahe hain
-        auth_code = f"CODE_{user.user_id}"
-        return redirect(f"{redirect_uri}?state={state}&code={auth_code}")
-
-    return render_template('login.html', state=state, redirect_uri=redirect_uri, error="Invalid Credentials!")
-
+        if user:
+            auth_code = f"CODE_{user.user_id}"
+            return redirect(f"{redirect_uri}?state={state}&code={auth_code}")
+        else:
+            return render_template('login.html', state=state, redirect_uri=redirect_uri, error="Invalid Credentials!")
+            
+    except Exception as e:
+        # Crash hone ke bajaye screen par error dikhayega
+        return f"Backend Crash Error: {str(e)}", 500
 @app.route('/token', methods=['POST'])
 def token():
     code = request.form.get('code', '')
