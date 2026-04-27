@@ -10,18 +10,24 @@ import time
 app = Flask(__name__)
 
 # ================= LOCAL DB SETTINGS =================
-DB_USER = 'root'
-DB_PASS = ''
-DB_HOST = '127.0.0.1'
-DB_NAME = 'oxymora_sign'
-DB_PORT = '3307'
-JWT_KEY = 'oxy_secret_786'
+DB_USER = os.getenv('DB_USER')
+DB_PASS = os.getenv('DB_PASS')
+DB_HOST = os.getenv('DB_HOST')
+DB_NAME = os.getenv('DB_NAME')
+DB_PORT = os.getenv('DB_PORT', '3306') # Default to 3306 if not found
+JWT_KEY = os.getenv('JWT_KEY', 'default_fallback_secret')
 
+# Construct the URI
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = JWT_KEY
 
 db = SQLAlchemy(app)
+
+# ================= MQTT SETTINGS =================
+MQTT_BROKER = os.getenv('MQTT_BROKER', 'otplcloud.com')
+MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
+
 
 # ================= DATABASE MODELS =================
 class User(db.Model):
