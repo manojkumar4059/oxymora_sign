@@ -6,4 +6,4 @@ pymysql
 python-dotenv
 paho-mqtt
 gunicorn
- 
+ webcolors
