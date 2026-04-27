@@ -297,111 +297,102 @@ def alexa_handler():
                 slots = data['request']['intent']['slots']
                 voice = slots.get("command", {}).get("value", "").lower().strip()
 
+                # Saare devices ek baar fetch karo validation ke liye
                 user_devices = Device.query.filter_by(user_id=user.user_id).all()
                 if not user_devices:
                     return build_alexa_response("Aapke paas koi device registered nahi hai.", end_session=False)
 
+                # Voice parsing (Locations aur Types)
                 user_types = {d.device_type.type_name.lower() for d in user_devices if d.device_type}
                 user_locs  = {d.location.loc_name.lower() for d in user_devices if d.location}
-
                 found_loc  = next((loc for loc in user_locs if loc in voice), None)
                 found_type = next((t for t in user_types if t in voice), None)
 
                 nums = re.findall(r'\d+', voice)
                 val  = int(nums[0]) if nums else None
 
-                payload  = None
+                payload = None
                 res_text = ""
 
-                # Speed
-                if "speed" in voice and val is not None:
-                    speed_val = 101 - val if val <= 100 else 1
-                    payload   = f"S={speed_val};"
-                    res_text  = f"Speed {val} set kar di."
+                # ================= PRIORITY LOGIC =================
+                
+                # 1. ON / OFF (Sabse pehle check karo)
+                if any(w in voice for w in ['on', 'start', 'turn on', 'chalu', 'activate']):
+                    payload = "O"
+                    res_text = f"{found_type or 'Device'} chalu kar diya hai."
+                
+                elif any(w in voice for w in ['off', 'stop', 'turn off', 'band', 'deactivate']):
+                    payload = "F"
+                    res_text = f"{found_type or 'Device'} band kar diya hai."
 
-                # Brightness
+                # 2. SPEED
+                elif "speed" in voice and val is not None:
+                    speed_val = 101 - val if val <= 100 else 1
+                    payload = f"S={speed_val};"
+                    res_text = f"Speed {val} set kar di hai."
+
+                # 3. BRIGHTNESS
                 elif "brightness" in voice:
                     if val:
                         bright = val if val <= 8 else (8 + (val - 8) // 10)
                         payload = f"B={bright};"
                     else:
                         payload = "B=5;"
-                    res_text = "Brightness set kar di."
+                    res_text = "Brightness adjust kar di hai."
 
-                # Color
-                elif "color" in voice or "rang" in voice:
+                # 4. COLOR
+                elif any(w in voice for w in ["color", "rang", "colour"]):
                     colors = {
                         "red": "255,0,0", "green": "0,255,0", "blue": "0,0,255",
                         "white": "255,255,255", "pink": "255,192,203",
                         "yellow": "255,255,0", "orange": "255,165,0"
                     }
                     found_color = next((c for c in colors if c in voice), "white")
-                    payload  = f"C={colors[found_color]};"
-                    res_text = f"Color {found_color} kar diya."
+                    payload = f"C={colors[found_color]};"
+                    res_text = f"Color {found_color} kar diya hai."
 
-                # Mode
+                # 5. MODE
                 elif "mode" in voice and val:
-                    payload  = f"M{val}"
-                    res_text = f"Mode {val} active kar diya."
+                    payload = f"M{val}"
+                    res_text = f"Mode {val} active kar diya hai."
 
-                # On
-                elif any(w in voice for w in ['on', 'start', 'turn on', 'activate', 'chalu']):
-                    payload  = "O"
-                    res_text = f"{found_type or 'Device'} on kar diya."
-
-                # Off
-                elif any(w in voice for w in ['off', 'stop', 'turn off', 'deactivate', 'band']):
-                    payload  = "F"
-                    res_text = f"{found_type or 'Device'} band kar diya."
-
+                # ================= DATABASE & MQTT EXECUTION =================
                 if payload:
-                    # 1. Base query for the user
                     query = Device.query.filter_by(user_id=user.user_id)
                     
-                    # 2. Check if Location exists in user's account
+                    # Location validation
                     if found_loc:
                         query = query.join(Location).filter(Location.loc_name == found_loc)
-                        # Check location valid hai ya nahi
                         if not query.first():
-                             return build_alexa_response(f"Sorry, aapke account mein {found_loc} added nahi hai.", end_session=False)
+                            return build_alexa_response(f"Aapke account mein {found_loc} added nahi hai.", end_session=False)
 
-                    # 3. Check if specific Device Type exists at that location
+                    # Device Type validation
                     if found_type:
                         device = query.join(DeviceType).filter(DeviceType.type_name == found_type).first()
-                        
-                        if device:
-                            # Sab sahi hai, MQTT publish karo
-                            topic = f"alexa/{device.mac_address}/RX"
-                            mqtt_client.publish(topic, payload)
-                            return build_alexa_response(res_text + " Kuch aur?", end_session=False)
-                        else:
-                            # Location hai par fan/light nahi hai
-                            msg = f"{found_loc} mein {found_type} added nahi hai." if found_loc else f"{found_type} added nahi hai."
-                            return build_alexa_response(f"Sorry, {msg}", end_session=False)
-                    
-                    # 4. Agar user ne type nahi bola (e.g., "Hall chalu karo")
                     else:
                         device = query.first()
-                        if device:
-                            topic = f"alexa/{device.mac_address}/RX"
-                            mqtt_client.publish(topic, payload)
-                            return build_alexa_response(res_text, end_session=False)
-                        else:
-                            return build_alexa_response("Mujhe woh device nahi mili.", end_session=False)
 
-                return build_alexa_response("Kya karun? On/Off, Speed, Brightness ya Color bolo.", end_session=False)
+                    # Final Check
+                    if device:
+                        topic = f"alexa/{device.mac_address}/RX"
+                        mqtt_client.publish(topic, payload)
+                        return build_alexa_response(f"{res_text} Aur kuch?", end_session=False)
+                    else:
+                        # AGAR DATABASE EMPTY HAI (Jaisa tere screenshot mein tha)
+                        d_name = found_type if found_type else "device"
+                        l_name = f"{found_loc} mein" if found_loc else "Aapke paas"
+                        return build_alexa_response(f"Sorry Manoj, {l_name} {d_name} added nahi hai.", end_session=False)
+
+                return build_alexa_response("Kya karun? On/Off, Speed, Brightness, Color ya Mode boliye.", end_session=False)
 
             except Exception as e:
                 print(f"❌ Error: {e}")
-                import traceback
-                traceback.print_exc()
-                return build_alexa_response("Processing mein error aayi.", end_session=False)
+                return build_alexa_response("Command process karne mein dikkat aayi.", end_session=False)
 
-        # AMAZON.StopIntent ya AMAZON.CancelIntent - tab band karo
         elif intent_name in ["AMAZON.StopIntent", "AMAZON.CancelIntent"]:
-            return build_alexa_response("Theek hai, Floro band kar raha hoon. Alvida!", end_session=True)
+            return build_alexa_response("Theek hai, Floro band ho raha hai. Bye!", end_session=True)
 
-    return build_alexa_response("Samajh nahi aaya.", end_session=False)
+    return build_alexa_response("Samajh nahi aaya, please dobara bolein.", end_session=False)
 if __name__ == '__main__':
     # MQTT ko yahan start karna behtar hai
     connect_mqtt()
