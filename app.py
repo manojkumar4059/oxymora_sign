@@ -320,7 +320,7 @@ def alexa_handler():
                     res_text  = f"Speed {val} set kar di."
 
                 # Brightness
-                elif "brightness" in voice or "light" in voice:
+                elif "brightness" in voice:
                     if val:
                         bright = val if val <= 8 else (8 + (val - 8) // 10)
                         payload = f"B={bright};"
