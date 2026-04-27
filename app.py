@@ -361,28 +361,29 @@ def alexa_handler():
                     # 1. Base query: Sirf is user ke devices
                     query = Device.query.filter_by(user_id=user.user_id)
                     
-                    # 2. Location Strict Match
+                    # 2. Location Check (Agar location boli gayi hai)
                     if found_loc:
                         query = query.join(Location).filter(Location.loc_name == found_loc)
-                        # Agar location hi galat hai
+                        # Agar location hi database mein nahi hai
                         if not query.first():
-                            return build_alexa_response(f"Manoj, aapke account mein {found_loc} naam ki jagah nahi hai.", end_session=False)
-                    
-                    # 3. Type Strict Match (Ye hai tera main fix)
+                            return build_alexa_response(f"Manoj, aapke account mein {found_loc} added nahi hai.", end_session=False)
+
+                    # 3. STRICT MATCH LOGIC (Yahan fix hai)
+                    device = None
                     if found_type:
-                        # Hum specific type ko join karke filter kar rahe hain
+                        # Agar user ne 'fan' bola, toh sirf 'fan' hi dhundo
                         device = query.join(DeviceType).filter(DeviceType.type_name == found_type).first()
                         
+                        # AGAR TYPE NAHI MILA: Toh yahan se hi mana kar do (Pehle yahan galti thi)
                         if not device:
-                            # Agar location sahi hai par wahan wo cheez (pankha) nahi hai
-                            loc_str = f"{found_loc} mein" if found_loc else "aapke account mein"
-                            return build_alexa_response(f"Sorry, {loc_str} {found_type} added nahi hai.", end_session=False)
+                            loc_msg = f"{found_loc} mein" if found_loc else "aapke account mein"
+                            return build_alexa_response(f"Sorry, {loc_msg} {found_type} added nahi hai.", end_session=False)
                     else:
-                        # Agar user ne device type bola hi nahi (e.g., "Home on kar do")
-                        # Tab hum default device utha sakte hain ya error de sakte hain
+                        # Agar user ne device type nahi bola (sirf "Bedroom off karo")
+                        # Tab hum us location ka pehla device utha sakte hain
                         device = query.first()
 
-                    # 4. Final Execution (Sirf tab jab device confirm ho jaye)
+                    # 4. FINAL EXECUTION: Sirf tab jab device confirm ho
                     if device:
                         topic = f"alexa/{device.mac_address}/RX"
                         mqtt_client.publish(topic, payload)
