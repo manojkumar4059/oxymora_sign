@@ -280,7 +280,6 @@ def alexa_handler():
     data = request.get_json()
     req_type = data.get("request", {}).get("type")
 
-    # Token se user fetch karo
     access_token = data.get('session', {}).get('user', {}).get('accessToken')
     user = get_user_from_token(access_token) if access_token else None
 
@@ -298,10 +297,9 @@ def alexa_handler():
                 slots = data['request']['intent']['slots']
                 voice = slots.get("command", {}).get("value", "").lower().strip()
 
-                # Sirf is user ke devices
                 user_devices = Device.query.filter_by(user_id=user.user_id).all()
                 if not user_devices:
-                    return build_alexa_response("Aapke paas koi device registered nahi hai.")
+                    return build_alexa_response("Aapke paas koi device registered nahi hai.", end_session=False)
 
                 user_types = {d.device_type.type_name.lower() for d in user_devices if d.device_type}
                 user_locs  = {d.location.loc_name.lower() for d in user_devices if d.location}
@@ -328,7 +326,7 @@ def alexa_handler():
                         payload = f"B={bright};"
                     else:
                         payload = "B=5;"
-                    res_text = f"Brightness set kar di."
+                    res_text = "Brightness set kar di."
 
                 # Color
                 elif "color" in voice or "rang" in voice:
@@ -368,19 +366,23 @@ def alexa_handler():
                         topic = f"alexa/{device.mac_address}/RX"
                         mqtt_client.publish(topic, payload)
                         print(f"✅ MQTT: {topic} -> {payload}")
-                        return build_alexa_response(res_text)
+                        return build_alexa_response(res_text, end_session=False)  # ✅ Skill open rehti hai
                     else:
-                        return build_alexa_response("Woh device nahi mili.")
+                        return build_alexa_response("Woh device nahi mili.", end_session=False)
 
-                return build_alexa_response("Kya karun? On/Off, Speed, Brightness ya Color bolo.")
+                return build_alexa_response("Kya karun? On/Off, Speed, Brightness ya Color bolo.", end_session=False)
 
             except Exception as e:
                 print(f"❌ Error: {e}")
                 import traceback
                 traceback.print_exc()
-                return build_alexa_response("Processing mein error aayi.")
+                return build_alexa_response("Processing mein error aayi.", end_session=False)
 
-    return build_alexa_response("Samajh nahi aaya.")
+        # AMAZON.StopIntent ya AMAZON.CancelIntent - tab band karo
+        elif intent_name in ["AMAZON.StopIntent", "AMAZON.CancelIntent"]:
+            return build_alexa_response("Theek hai, Floro band kar raha hoon. Alvida!", end_session=True)
+
+    return build_alexa_response("Samajh nahi aaya.", end_session=False)
 if __name__ == '__main__':
     # MQTT ko yahan start karna behtar hai
     connect_mqtt()
