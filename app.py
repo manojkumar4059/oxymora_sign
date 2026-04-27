@@ -355,20 +355,39 @@ def alexa_handler():
                     res_text = f"{found_type or 'Device'} band kar diya."
 
                 if payload:
+                    # 1. Base query for the user
                     query = Device.query.filter_by(user_id=user.user_id)
-                    if found_type:
-                        query = query.join(DeviceType).filter(DeviceType.type_name == found_type)
+                    
+                    # 2. Check if Location exists in user's account
                     if found_loc:
                         query = query.join(Location).filter(Location.loc_name == found_loc)
+                        # Check location valid hai ya nahi
+                        if not query.first():
+                             return build_alexa_response(f"Sorry, aapke account mein {found_loc} added nahi hai.", end_session=False)
 
-                    device = query.first()
-                    if device:
-                        topic = f"alexa/{device.mac_address}/RX"
-                        mqtt_client.publish(topic, payload)
-                        print(f"✅ MQTT: {topic} -> {payload}")
-                        return build_alexa_response(res_text, end_session=False)  # ✅ Skill open rehti hai
+                    # 3. Check if specific Device Type exists at that location
+                    if found_type:
+                        device = query.join(DeviceType).filter(DeviceType.type_name == found_type).first()
+                        
+                        if device:
+                            # Sab sahi hai, MQTT publish karo
+                            topic = f"alexa/{device.mac_address}/RX"
+                            mqtt_client.publish(topic, payload)
+                            return build_alexa_response(res_text + " Kuch aur?", end_session=False)
+                        else:
+                            # Location hai par fan/light nahi hai
+                            msg = f"{found_loc} mein {found_type} added nahi hai." if found_loc else f"{found_type} added nahi hai."
+                            return build_alexa_response(f"Sorry, {msg}", end_session=False)
+                    
+                    # 4. Agar user ne type nahi bola (e.g., "Hall chalu karo")
                     else:
-                        return build_alexa_response("Woh device nahi mili.", end_session=False)
+                        device = query.first()
+                        if device:
+                            topic = f"alexa/{device.mac_address}/RX"
+                            mqtt_client.publish(topic, payload)
+                            return build_alexa_response(res_text, end_session=False)
+                        else:
+                            return build_alexa_response("Mujhe woh device nahi mili.", end_session=False)
 
                 return build_alexa_response("Kya karun? On/Off, Speed, Brightness ya Color bolo.", end_session=False)
 
